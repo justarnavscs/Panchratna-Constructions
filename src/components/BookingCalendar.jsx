@@ -3,17 +3,73 @@ import { Calendar, Clock, User, Phone, CheckCircle2, AlertCircle, ChevronLeft, C
 import { db, isFirebaseConfigured, mockDb } from '../firebaseClient';
 import { collection, query, where, getDocs, addDoc } from 'firebase/firestore';
 
+// Helper to get current date and time in Asia/Kolkata timezone
+function getKolkataTime() {
+  try {
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Kolkata',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false
+    });
+    const parts = formatter.formatToParts(new Date());
+    const partObj = {};
+    parts.forEach(p => {
+      partObj[p.type] = p.value;
+    });
+    return {
+      dateStr: `${partObj.year}-${partObj.month}-${partObj.day}`,
+      hour: parseInt(partObj.hour, 10),
+      minute: parseInt(partObj.minute, 10)
+    };
+  } catch (e) {
+    console.error('Kolkata time format error:', e);
+    const d = new Date();
+    return {
+      dateStr: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`,
+      hour: d.getHours(),
+      minute: d.getMinutes()
+    };
+  }
+}
+
+// Helper to convert slot string (e.g. "03:15 PM") to minutes since midnight
+function getSlotMinutes(slotStr) {
+  const match = slotStr.match(/(\d{2}):(\d{2})\s*(AM|PM)/i);
+  if (!match) return 0;
+  const hoursStr = match[1];
+  const minutesStr = match[2];
+  const ampm = match[3];
+  let hours = parseInt(hoursStr, 10);
+  const minutes = parseInt(minutesStr, 10);
+  if (ampm.toUpperCase() === 'PM' && hours !== 12) {
+    hours += 12;
+  } else if (ampm.toUpperCase() === 'AM' && hours === 12) {
+    hours = 0;
+  }
+  return hours * 60 + minutes;
+}
+
 export default function BookingCalendar() {
-  const [currentDate, setCurrentDate] = useState(new Date());
+  const [currentDate, setCurrentDate] = useState(() => {
+    const kolkata = getKolkataTime();
+    const [y, m] = kolkata.dateStr.split('-').map(Number);
+    return new Date(y, m - 1, 1);
+  });
   const [selectedDate, setSelectedDate] = useState(() => {
-    // Default to today, but skip to Monday if today is Sunday
-    const today = new Date();
-    if (today.getDay() === 0) {
-      const monday = new Date(today);
-      monday.setDate(today.getDate() + 1);
+    // Default to today in Kolkata, but skip to Monday if Sunday
+    const kolkata = getKolkataTime();
+    const [y, m, d] = kolkata.dateStr.split('-').map(Number);
+    const kolkataDate = new Date(y, m - 1, d);
+    if (kolkataDate.getDay() === 0) {
+      const monday = new Date(kolkataDate);
+      monday.setDate(kolkataDate.getDate() + 1);
       return monday;
     }
-    return today;
+    return kolkataDate;
   });
   const [selectedTimeSlot, setSelectedTimeSlot] = useState(null);
   const [blockedSlots, setBlockedSlots] = useState([]);
@@ -97,8 +153,9 @@ export default function BookingCalendar() {
   const firstDayIndex = new Date(year, month, 1).getDay();
 
   const prevMonth = () => {
-    const today = new Date();
-    if (year > today.getFullYear() || (year === today.getFullYear() && month > today.getMonth())) {
+    const kolkata = getKolkataTime();
+    const [kYear, kMonth] = kolkata.dateStr.split('-').map(Number);
+    if (year > kYear || (year === kYear && month > (kMonth - 1))) {
       setCurrentDate(new Date(year, month - 1, 1));
     }
   };
@@ -109,10 +166,11 @@ export default function BookingCalendar() {
 
   const selectDay = useCallback((day) => {
     const date = new Date(year, month, day);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    // Disable past days and Sundays
-    if (date >= today && date.getDay() !== 0) {
+    const dateStr = formatDateString(date);
+    const kolkata = getKolkataTime();
+    
+    // Disable past days and Sundays in Kolkata timezone
+    if (dateStr >= kolkata.dateStr && date.getDay() !== 0) {
       setSelectedDate(date);
       setSelectedTimeSlot(null);
       setError('');
@@ -255,12 +313,12 @@ export default function BookingCalendar() {
     for (let i = 0; i < firstDayIndex; i++) {
       cells.push(<div key={`empty-${i}`} className="w-full aspect-square max-w-[40px]"></div>);
     }
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const kolkata = getKolkataTime();
 
     for (let d = 1; d <= daysInMonth; d++) {
       const thisDate = new Date(year, month, d);
-      const isPast = thisDate < today;
+      const thisDateStr = formatDateString(thisDate);
+      const isPast = thisDateStr < kolkata.dateStr;
       const isSunday = thisDate.getDay() === 0;
       const isBlocked = isPast || isSunday;
       const isSelected = selectedDate.getDate() === d &&
@@ -467,43 +525,66 @@ export default function BookingCalendar() {
                 </h3>
                 <p className="text-xs text-slate-500 mb-4">Doctor available 3:00 PM – 5:00 PM (15-min slots)</p>
 
-                {loadingSlots ? (
-                  <div className="h-44 flex flex-col items-center justify-center text-slate-500 gap-2">
-                    <Loader2 className="w-8 h-8 animate-spin text-emerald-500" />
-                    <span className="text-xs font-medium">Refreshing active slots...</span>
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-2 gap-2">
-                    {timeSlots.map((slot) => {
-                      const isBooked = blockedSlots.includes(slot);
-                      const isSelected = selectedTimeSlot === slot;
+                {(() => {
+                  const kolkata = getKolkataTime();
+                  const isToday = selectedDateStr === kolkata.dateStr;
+                  const isPastClosing = isToday && kolkata.hour >= 17;
 
-                      let slotStyles = "py-2 px-3 text-center rounded-lg text-xs font-semibold tracking-wide border transition-all duration-200 whitespace-nowrap ";
-                      if (isBooked) {
-                        slotStyles += "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed line-through";
-                      } else if (isSelected) {
-                        slotStyles += "bg-cyan-600 text-white border-cyan-700 shadow-md ring-2 ring-cyan-200";
-                      } else {
-                        slotStyles += "bg-white text-slate-700 border-slate-200 hover:border-cyan-400 hover:text-cyan-700 cursor-pointer";
-                      }
+                  return (
+                    <>
+                      {isPastClosing && (
+                        <div className="p-3.5 bg-amber-50 border border-amber-200 text-amber-800 text-xs font-semibold rounded-xl flex items-start gap-2 mb-4 leading-relaxed animate-fade-in shadow-sm">
+                          <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                          <div>
+                            <strong className="block text-amber-950 font-bold mb-0.5">Consultation Timings Concluded</strong>
+                            🌿 Doctor consultation hours for today have concluded (Doctor is available 3:00 PM – 5:00 PM). Please select a future date from the calendar.
+                          </div>
+                        </div>
+                      )}
 
-                      return (
-                        <button
-                          key={slot}
-                          type="button"
-                          disabled={isBooked}
-                          onClick={() => {
-                            setSelectedTimeSlot(slot);
-                            setError('');
-                          }}
-                          className={slotStyles}
-                        >
-                          {slot}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
+                      {loadingSlots ? (
+                        <div className="h-44 flex flex-col items-center justify-center text-slate-500 gap-2">
+                          <Loader2 className="w-8 h-8 animate-spin text-emerald-500" />
+                          <span className="text-xs font-medium">Refreshing active slots...</span>
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-2 gap-2">
+                          {timeSlots.map((slot) => {
+                            const isBooked = blockedSlots.includes(slot);
+                            const isPastSlot = isToday && (kolkata.hour * 60 + kolkata.minute) >= getSlotMinutes(slot);
+                            const isSlotDisabled = isBooked || isPastSlot;
+                            const isSelected = selectedTimeSlot === slot;
+
+                            let slotStyles = "py-2 px-3 text-center rounded-lg text-xs font-semibold tracking-wide border transition-all duration-200 whitespace-nowrap ";
+                            if (isSlotDisabled) {
+                              slotStyles += "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed line-through";
+                            } else if (isSelected) {
+                              slotStyles += "bg-cyan-600 text-white border-cyan-700 shadow-md ring-2 ring-cyan-200";
+                            } else {
+                              slotStyles += "bg-white text-slate-700 border-slate-200 hover:border-cyan-400 hover:text-cyan-700 cursor-pointer";
+                            }
+
+                            return (
+                              <button
+                                key={slot}
+                                type="button"
+                                disabled={isSlotDisabled}
+                                onClick={() => {
+                                  setSelectedTimeSlot(slot);
+                                  setError('');
+                                }}
+                                className={slotStyles}
+                                title={isPastSlot ? 'This slot has already passed' : isBooked ? 'This slot is already booked' : undefined}
+                              >
+                                {slot}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
               </div>
 
               {/* Form Fields */}

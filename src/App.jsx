@@ -32,6 +32,27 @@ export default function App() {
     return () => clearTimeout(introTimer);
   }, []);
 
+  // Dynamic SEO Page Title & Description based on Active View
+  useEffect(() => {
+    try {
+      if (activeView === 'bookings') {
+        document.title = "My Confirmed Spots & Slips | Kanchan Homoeo Hall Ranchi";
+        const descMeta = document.querySelector('meta[name="description"]');
+        if (descMeta) {
+          descMeta.setAttribute('content', 'View, track, or verify your scheduled doctor consultations at Kanchan Homoeo Hall Ranchi. Easily check status using your phone number.');
+        }
+      } else {
+        document.title = "Kanchan Homoeo Hall | Trusted Homoeopathic Care & Wholesale Remedies in Ranchi";
+        const descMeta = document.querySelector('meta[name="description"]');
+        if (descMeta) {
+          descMeta.setAttribute('content', 'Kanchan Homoeo Hall — trusted holistic healthcare in Ranchi, Jharkhand. Specializing in safe, gentle, and effective homoeopathic treatments, premium natural remedies, wholesale medicine distribution, and dedicated patient support.');
+        }
+      }
+    } catch (e) {
+      console.error("SEO update error", e);
+    }
+  }, [activeView]);
+
   // Dynamic Open Status Badge logic — Mon–Sat, 10:30 AM to 8:00 PM IST (Ranchi Time)
   useEffect(() => {
     const checkStatus = () => {

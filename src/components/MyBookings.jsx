@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Search, Calendar, Clock, User, Phone, CheckCircle2, AlertCircle, Loader2, ArrowLeft, XCircle, Trash2 } from 'lucide-react';
 import { db, isFirebaseConfigured, mockDb } from '../firebaseClient';
-import { collection, query, where, getDocs, doc, deleteDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, updateDoc } from 'firebase/firestore';
 
 export default function MyBookings({ onBackToHome }) {
   const [searchPhone, setSearchPhone] = useState('');
@@ -53,15 +53,19 @@ export default function MyBookings({ onBackToHome }) {
     }
   };
 
-  // Cancel appointment — marks CANCELLED in UI + Firestore + Google Sheets
+  // Cancel appointment — marks CANCELLED in UI + Firestore + Google Sheets + localStorage
   const handleCancel = async (bookingId) => {
     setCancellingId(bookingId);
     setCancelError('');
     const booking = searchResults?.find((b) => b.id === bookingId);
     try {
       if (isFirebaseConfigured) {
-        await deleteDoc(doc(db, 'clinic_appointments', bookingId));
+        await updateDoc(doc(db, 'clinic_appointments', bookingId), {
+          status: 'CANCELLED',
+          cancelled: true
+        });
       }
+      
       // Mark as CANCELLED in Google Sheets (fire-and-forget)
       if (booking) {
         fetch('/api/updateSheets', {
@@ -77,9 +81,35 @@ export default function MyBookings({ onBackToHome }) {
           })
         }).catch((err) => console.warn('Sheets cancel sync failed:', err));
       }
+
+      // Feature A & B: Update both localStorage caches for persistent state sync
+      try {
+        // 1. Global mock database cache
+        const globalAppointments = JSON.parse(localStorage.getItem('clinic_appointments') || '[]');
+        const updatedGlobal = globalAppointments.map((apt) => {
+          if (apt.id === bookingId || (booking && apt.appointment_date === booking.appointment_date && apt.time_slot === booking.time_slot)) {
+            return { ...apt, status: 'CANCELLED', cancelled: true };
+          }
+          return apt;
+        });
+        localStorage.setItem('clinic_appointments', JSON.stringify(updatedGlobal));
+
+        // 2. User device-local bookings cache
+        const localCache = JSON.parse(localStorage.getItem('user_local_bookings') || '[]');
+        const updatedLocal = localCache.map((apt) => {
+          if (apt.id === bookingId || (booking && apt.appointment_date === booking.appointment_date && apt.time_slot === booking.time_slot)) {
+            return { ...apt, status: 'CANCELLED', cancelled: true };
+          }
+          return apt;
+        });
+        localStorage.setItem('user_local_bookings', JSON.stringify(updatedLocal));
+      } catch (cacheErr) {
+        console.error('Failed to update cancellation state in localStorage caches:', cacheErr);
+      }
+
       // Keep card visible but flag it as cancelled — don't remove it
       setSearchResults((prev) =>
-        prev ? prev.map((b) => b.id === bookingId ? { ...b, cancelled: true } : b) : prev
+        prev ? prev.map((b) => b.id === bookingId ? { ...b, cancelled: true, status: 'CANCELLED' } : b) : prev
       );
       setConfirmId(null);
     } catch (err) {
@@ -91,7 +121,7 @@ export default function MyBookings({ onBackToHome }) {
   };
 
   const renderBookingCard = (booking) => {
-    const isCancelled = booking.cancelled === true;
+    const isCancelled = booking.cancelled === true || booking.status === 'CANCELLED' || booking.status === 'Cancelled';
     const isCancelling = cancellingId === booking.id;
     const isAwaitingConfirm = confirmId === booking.id;
     const bookingId = booking.id;
@@ -100,7 +130,7 @@ export default function MyBookings({ onBackToHome }) {
       <div
         key={bookingId || `${booking.appointment_date}-${booking.time_slot}`}
         className={`bg-white border rounded-2xl p-5 shadow-sm space-y-4 relative overflow-hidden transition-all duration-200 hover:shadow-md ${
-          isCancelled ? 'border-slate-200 opacity-60' : 'border-[#EAE5DC]'
+          isCancelled ? 'border-slate-200 opacity-60 bg-slate-50/50' : 'border-[#EAE5DC]'
         }`}
       >
         {/* Top colour bar — grey if cancelled */}
@@ -110,43 +140,43 @@ export default function MyBookings({ onBackToHome }) {
 
         <div className="flex items-center justify-between border-b border-[#EAE5DC]/60 pb-3">
           <div className={`flex items-center gap-2 ${isCancelled ? 'text-slate-400' : 'text-emerald-700'}`}>
-            <Calendar className="w-4 h-4" />
-            <span className={`font-bold text-xs uppercase tracking-wider ${isCancelled ? 'line-through' : ''}`}>Appointment Pass</span>
+            <Calendar className={`w-4 h-4 shrink-0 ${isCancelled ? 'text-slate-300' : 'text-emerald-600'}`} />
+            <span className={`font-bold text-xs uppercase tracking-wider ${isCancelled ? 'line-through text-slate-400/80' : ''}`}>Appointment Pass</span>
           </div>
           <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-wider border ${
             isCancelled
               ? 'bg-slate-100 border-slate-200 text-slate-400 line-through'
               : 'bg-emerald-50 border-emerald-200 text-emerald-700'
           }`}>
-            Booked
+            {booking.status === 'Confirmed' ? 'Confirmed' : 'Booked'}
           </span>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
           <div className="space-y-3">
             <div className="flex items-center gap-2.5 text-slate-600">
-              <User className="w-4 h-4 text-slate-400 shrink-0" />
+              <User className={`w-4 h-4 shrink-0 ${isCancelled ? 'text-slate-300' : 'text-slate-400'}`} />
               <div>
-                <span className="block text-[9px] uppercase tracking-wider font-bold text-slate-400">Patient Name</span>
-                <span className={`font-bold text-slate-900 ${isCancelled ? 'line-through text-slate-400' : ''}`}>{booking.patient_name}</span>
+                <span className={`block text-[9px] uppercase tracking-wider font-bold ${isCancelled ? 'line-through text-slate-400/70' : 'text-slate-400'}`}>Patient Name</span>
+                <span className={`font-bold ${isCancelled ? 'line-through text-slate-400/80' : 'text-slate-900'}`}>{booking.patient_name}</span>
               </div>
             </div>
 
             <div className="flex items-center gap-2.5 text-slate-600">
-              <Phone className="w-4 h-4 text-slate-400 shrink-0" />
+              <Phone className={`w-4 h-4 shrink-0 ${isCancelled ? 'text-slate-300' : 'text-slate-400'}`} />
               <div>
-                <span className="block text-[9px] uppercase tracking-wider font-bold text-slate-400">Registered Phone</span>
-                <span className={`font-semibold text-slate-800 ${isCancelled ? 'line-through text-slate-400' : ''}`}>{booking.patient_phone}</span>
+                <span className={`block text-[9px] uppercase tracking-wider font-bold ${isCancelled ? 'line-through text-slate-400/70' : 'text-slate-400'}`}>Registered Phone</span>
+                <span className={`font-semibold ${isCancelled ? 'line-through text-slate-400/80' : 'text-slate-800'}`}>{booking.patient_phone}</span>
               </div>
             </div>
           </div>
 
           <div className="space-y-3">
             <div className="flex items-center gap-2.5 text-slate-600">
-              <Calendar className="w-4 h-4 text-slate-400 shrink-0" />
+              <Calendar className={`w-4 h-4 shrink-0 ${isCancelled ? 'text-slate-300' : 'text-slate-400'}`} />
               <div>
-                <span className="block text-[9px] uppercase tracking-wider font-bold text-slate-400">Consultation Date</span>
-                <span className={`font-bold text-slate-900 ${isCancelled ? 'line-through text-slate-400' : ''}`}>
+                <span className={`block text-[9px] uppercase tracking-wider font-bold ${isCancelled ? 'line-through text-slate-400/70' : 'text-slate-400'}`}>Consultation Date</span>
+                <span className={`font-bold ${isCancelled ? 'line-through text-slate-400/80' : 'text-slate-900'}`}>
                   {new Date(booking.appointment_date).toLocaleDateString(undefined, {
                     weekday: 'long',
                     year: 'numeric',
@@ -158,12 +188,12 @@ export default function MyBookings({ onBackToHome }) {
             </div>
 
             <div className="flex items-center gap-2.5 text-slate-600">
-              <Clock className="w-4 h-4 text-slate-400 shrink-0" />
+              <Clock className={`w-4 h-4 shrink-0 ${isCancelled ? 'text-slate-300' : 'text-slate-400'}`} />
               <div>
-                <span className="block text-[9px] uppercase tracking-wider font-bold text-slate-400">Reserved Slot</span>
+                <span className={`block text-[9px] uppercase tracking-wider font-bold ${isCancelled ? 'line-through text-slate-400/70' : 'text-slate-400'}`}>Reserved Slot</span>
                 <span className={`font-extrabold px-2 py-0.5 rounded border ${
                   isCancelled
-                    ? 'line-through text-slate-400 bg-slate-50 border-slate-200'
+                    ? 'line-through text-slate-400/80 bg-slate-100 border-slate-200'
                     : 'text-[#0F766E] bg-teal-50 border-teal-100'
                 }`}>{booking.time_slot}</span>
               </div>
@@ -174,7 +204,7 @@ export default function MyBookings({ onBackToHome }) {
         <div className={`bg-slate-50 border border-slate-100 rounded-xl p-3 text-[10px] leading-relaxed font-medium ${
           isCancelled ? 'text-slate-400 line-through' : 'text-slate-500'
         }`}>
-          💡 <strong>Official Proof:</strong> Present this slip card at the clinic counter near Mahabir Chowk, Ranchi, on your appointment day. No email login or printed copy is required.
+          💡 <strong className={isCancelled ? 'line-through text-slate-400/80' : 'text-slate-600'}>Official Proof:</strong> Present this slip card at the clinic counter near Mahabir Chowk, Ranchi, on your appointment day. No email login or printed copy is required.
         </div>
 
         {/* Cancel Section — hidden if already cancelled */}

@@ -37,13 +37,27 @@ export default async function handler(req, res) {
     });
     const sheetTitles = spreadsheet.data.sheets.map(s => s.properties.title);
 
+    // Helper to resolve dynamic monthly tab names based on the appointment date (YYYY-MM-DD)
+    const getMonthTabName = (dateStr) => {
+      const parts = (dateStr || '').split('-');
+      if (parts.length !== 3) return 'Appointments';
+      const year = parts[0];
+      const monthNum = parseInt(parts[1], 10);
+      const monthNames = [
+        'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+        'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+      ];
+      const monthName = monthNames[monthNum - 1] || 'Unknown';
+      return `Appointments_${monthName}_${year}`; // e.g. Appointments_May_2026
+    };
+
     let targetTab = '';
     let headers = [];
     let range = '';
     let values = [];
 
     if (type === 'appointment') {
-      targetTab = 'Appointments';
+      targetTab = getMonthTabName(data.appointment_date);
       headers = ['Timestamp', 'Patient Name', 'Patient Phone', 'Appointment Date', 'Time Slot', 'Status'];
       range = `${targetTab}!A:F`;
       values = [[timestamp, data.patient_name, data.patient_phone, data.appointment_date, data.time_slot, 'Booked']];
@@ -54,8 +68,15 @@ export default async function handler(req, res) {
       const searchDate  = (data.appointment_date || '').trim();
       const searchSlot  = normalizeSlot(data.time_slot);
 
-      // Find the matching row and mark it CANCELLED
-      targetTab = 'Appointments';
+      // Find the matching row and mark it CANCELLED in the correct month's sheet
+      targetTab = getMonthTabName(data.appointment_date);
+
+      // Check if target tab exists in the spreadsheet before attempting to read it
+      if (!sheetTitles.includes(targetTab)) {
+        console.warn(`Cancel: target tab ${targetTab} does not exist in the spreadsheet.`);
+        return res.status(200).json({ status: 'not_found', message: `Sheet tab ${targetTab} does not exist.` });
+      }
+
       const readRes = await sheets.spreadsheets.values.get({
         spreadsheetId: sheetId,
         range: `${targetTab}!A:F`,
@@ -90,7 +111,7 @@ export default async function handler(req, res) {
         valueInputOption: 'RAW',
         requestBody: { values: [['CANCELLED']] },
       });
-      return res.status(200).json({ status: 'success', message: `Row ${matchRowIndex} marked CANCELLED.` });
+      return res.status(200).json({ status: 'success', message: `Row ${matchRowIndex} marked CANCELLED in ${targetTab}.` });
     } else if (type === 'b2b_query') {
       targetTab = 'B2B_Queries';
       headers = ['Timestamp', 'Contact Name', 'Company Name', 'Email', 'Phone', 'Estimated Quantity', 'Requirements'];
