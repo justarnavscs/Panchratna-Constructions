@@ -4,7 +4,7 @@ import {
   PhoneCall, 
   Mail, 
   Clock, 
-  Activity, 
+  Building2, 
   Users, 
   Star, 
   ShieldCheck, 
@@ -12,7 +12,8 @@ import {
   CalendarDays, 
   Briefcase,
   Menu,
-  X
+  X,
+  HardHat
 } from 'lucide-react';
 import BookingCalendar from './components/BookingCalendar';
 import BulkForm from './components/BulkForm';
@@ -28,13 +29,383 @@ export default function App() {
   useEffect(() => {
     const introTimer = setTimeout(() => {
       setShowIntro(false);
-    }, 3000); // unmount loader exactly when CSS animation exits
+    }, 3000); 
     return () => clearTimeout(introTimer);
   }, []);
 
-  // Dynamic SEO Page Title & Description based on Active View
+  // Dynamic SEO Page Title & Description (Targeting Construction LLP to beat Skyline)
   useEffect(() => {
     try {
+      if (activeView === 'bookings') {
+        document.title = "Manage My Site Visits | Panchratna Constructions LLP";
+        const descMeta = document.querySelector('meta[name="description"]');
+        if (descMeta) {
+          descMeta.setAttribute('content', 'View and manage your scheduled site visits and project consultations with Panchratna Constructions LLP Ranchi.');
+        }
+      } else {
+        document.title = "Panchratna Constructions LLP | Built on Trust. Engineered for the Future.";
+        const descMeta = document.querySelector('meta[name="description"]');
+        if (descMeta) {
+          descMeta.setAttribute('content', 'Panchratna Constructions LLP — Leading real estate developer in Ranchi, Jharkhand. Specializing in high-rise engineering, luxury residential projects (Altius, Heritage), and JHARERA approved landmarks.');
+        }
+      }
+    } catch (e) {
+      console.error("SEO update error", e);
+    }
+  }, [activeView]);
+
+  // Dynamic Open Status Badge logic — Mon–Sat, 10:30 AM to 8:00 PM IST (Ranchi Time)
+  useEffect(() => {
+    const checkStatus = () => {
+      try {
+        const now = new Date();
+        const timeFormatter = new Intl.DateTimeFormat('en-US', {
+          timeZone: 'Asia/Kolkata',
+          hour: 'numeric',
+          minute: 'numeric',
+          hour12: false
+        });
+        const timeParts = timeFormatter.formatToParts(now);
+        let hour = 12;
+        let minute = 0;
+        timeParts.forEach(p => {
+          if (p.type === 'hour') hour = parseInt(p.value, 10);
+          if (p.type === 'minute') minute = parseInt(p.value, 10);
+        });
+
+        const weekdayFormatter = new Intl.DateTimeFormat('en-US', {
+          timeZone: 'Asia/Kolkata',
+          weekday: 'short'
+        });
+        const weekdayStr = weekdayFormatter.format(now);
+        const isSunday = weekdayStr === 'Sun';
+        const decimalTime = hour + minute / 60;
+
+        if (isSunday) {
+          setIsOpenNow(false);
+        } else {
+          setIsOpenNow(decimalTime >= 10.5 && decimalTime < 20.0);
+        }
+      } catch {
+        const now = new Date();
+        const day = now.getDay();
+        const hour = now.getHours();
+        const mins = now.getMinutes();
+        const decimalTime = hour + mins / 60;
+        if (day === 0) {
+          setIsOpenNow(false);
+        } else {
+          setIsOpenNow(decimalTime >= 10.5 && decimalTime < 20.0);
+        }
+      }
+    };
+
+    checkStatus();
+    const interval = setInterval(checkStatus, 60000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const smoothScroll = (e, id) => {
+    e.preventDefault();
+    setActiveView('main');
+    setTimeout(() => {
+      const element = document.getElementById(id);
+      if (element) {
+        element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }, activeView === 'bookings' ? 100 : 0);
+    setMobileMenuOpen(false);
+  };
+
+  return (
+    <div className="min-h-screen bg-[#FDFBF7] text-[#1E293B] selection:bg-[#115E59]/20 selection:text-[#115E59] font-sans relative z-0">
+      
+      {/* Cinematic Logo Intro Loader Overlay */}
+      {showIntro && (
+        <div className="intro-overlay">
+          <img 
+            src="/logo.png" 
+            alt="Panchratna Constructions LLP Logo" 
+            className="intro-logo" 
+          />
+        </div>
+      )}
+
+      {/* Background Watermark */}
+      <div className="bg-watermark"></div>
+      
+      {/* 1. PREMIUM HEADER / NAVIGATION BAR */}
+      <header className="sticky top-0 z-50 bg-white/70 backdrop-blur-md border-b border-[#EAE5DC] transition-all duration-300 shadow-sm relative">
+        <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
+          {/* Logo Brand */}
+          <a href="#" className="flex items-center gap-2.5 group">
+            <div className="w-10 h-10 rounded-xl bg-[#115E59] flex items-center justify-center text-white shadow-md transition-transform group-hover:scale-105">
+              <Building2 className="w-5.5 h-5.5" />
+            </div>
+            <div>
+              <span className="font-display font-extrabold text-xl tracking-tight text-[#1A2421] group-hover:text-[#115E59] transition-colors uppercase">
+                PANCHRATNA<span className="text-[#0F766E]"> CONSTRUCTIONS</span>
+              </span>
+              <span className="hidden sm:block text-4xs font-bold uppercase tracking-widest text-[#5A6561] -mt-1">
+                Engineering Excellence &amp; Structural Landmarks — Ranchi
+              </span>
+              <span className="block sm:hidden text-[8px] font-bold uppercase tracking-widest text-[#5A6561] -mt-1">
+                Construction — Ranchi
+              </span>
+            </div>
+          </a>
+
+          {/* Desktop Nav Links */}
+          <nav className="hidden lg:flex items-center gap-8 text-sm font-semibold tracking-wide">
+            <button
+              onClick={() => {
+                setActiveView('main');
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              }}
+              className={`transition-colors cursor-pointer bg-transparent border-0 font-semibold tracking-wide p-0 ${
+                activeView === 'main' ? 'text-[#115E59]' : 'text-[#5A6561] hover:text-[#115E59]'
+              }`}
+            >
+              Home
+            </button>
+            <a href="#about" onClick={(e) => smoothScroll(e, 'about')} className="text-[#5A6561] hover:text-[#115E59] transition-colors">Legacy</a>
+            <a href="#projects" onClick={(e) => smoothScroll(e, 'projects')} className="text-[#5A6561] hover:text-[#115E59] transition-colors">Projects</a>
+            <a href="#inquiries" onClick={(e) => smoothScroll(e, 'inquiries')} className="text-[#5A6561] hover:text-[#0F766E] transition-colors">Inquiries</a>
+            <button
+              onClick={() => {
+                setActiveView('bookings');
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              }}
+              className={`transition-colors cursor-pointer bg-transparent border-0 font-semibold tracking-wide p-0 ${
+                activeView === 'bookings' ? 'text-[#115E59]' : 'text-[#5A6561] hover:text-[#115E59]'
+              }`}
+            >
+              My Site Visits
+            </button>
+            <a href="#contact" onClick={(e) => smoothScroll(e, 'contact')} className="text-[#5A6561] hover:text-[#115E59] transition-colors">Head Office</a>
+          </nav>
+
+          {/* Quick CTA */}
+          <div className="hidden lg:flex items-center gap-4">
+            <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-2xs font-extrabold tracking-widest border uppercase transition-colors ${
+              isOpenNow 
+                ? 'bg-emerald-50 border-emerald-200 text-emerald-700 animate-pulse' 
+                : 'bg-slate-50 border-slate-200 text-slate-500'
+            }`}>
+              <span className={`w-1.5 h-1.5 rounded-full ${isOpenNow ? 'bg-emerald-500' : 'bg-slate-400'}`}></span>
+              {isOpenNow ? 'Office Open — Visitors Welcome' : 'Office Closed — Book Visit Online'}
+            </span>
+            <a 
+              href="tel:9263002626"
+              className="py-2 px-4.5 bg-[#115E59] text-white font-bold text-xs rounded-lg shadow-md hover:bg-[#0D4F4A] hover:shadow-lg active:scale-95 transition-all uppercase tracking-wider"
+            >
+              Enquire Now
+            </a>
+          </div>
+
+          {/* Mobile Menu Button */}
+          <button 
+            type="button"
+            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            className="lg:hidden p-2 text-[#5A6561] hover:text-[#115E59] transition-colors"
+          >
+            {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+          </button>
+        </div>
+
+        {/* Mobile Navigation Drawer */}
+        {mobileMenuOpen && (
+          <div className="lg:hidden absolute top-20 left-0 w-full bg-white/95 backdrop-blur-xl border-b border-[#EAE5DC] p-6 flex flex-col gap-5 animate-fade-in shadow-md shadow-[#EFEAE2]">
+            <button
+              onClick={() => {
+                setActiveView('main');
+                setMobileMenuOpen(false);
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              }}
+              className={`text-left text-base font-bold cursor-pointer bg-transparent border-0 p-0 ${
+                activeView === 'main' ? 'text-[#115E59]' : 'text-[#1A2421]'
+              }`}
+            >
+              Home
+            </button>
+            <a href="#about" onClick={(e) => smoothScroll(e, 'about')} className="text-base font-semibold text-[#1A2421]">Legacy</a>
+            <a href="#projects" onClick={(e) => smoothScroll(e, 'projects')} className="text-base font-semibold text-[#1A2421]">Projects</a>
+            <a href="#inquiries" onClick={(e) => smoothScroll(e, 'inquiries')} className="text-base font-semibold text-[#1A2421]">Inquiries</a>
+            <button
+              onClick={() => {
+                setActiveView('bookings');
+                setMobileMenuOpen(false);
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              }}
+              className={`text-left text-base font-semibold cursor-pointer bg-transparent border-0 p-0 ${
+                activeView === 'bookings' ? 'text-[#115E59]' : 'text-[#1A2421]'
+              }`}
+            >
+              My Site Visits
+            </button>
+            <a href="#contact" onClick={(e) => smoothScroll(e, 'contact')} className="text-base font-semibold text-[#1A2421]">Head Office</a>
+            
+            <div className="border-t border-[#EAE5DC] pt-4 flex flex-col gap-4">
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-[#5A6561] font-bold tracking-wider uppercase">Office Status:</span>
+                <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-2xs font-extrabold tracking-widest border uppercase ${
+                  isOpenNow 
+                    ? 'bg-emerald-50 border-emerald-200 text-emerald-700' 
+                    : 'bg-slate-50 border-slate-200 text-slate-500'
+                }`}>
+                  {isOpenNow ? 'Open Now' : 'Closed — Book Online'}
+                </span>
+              </div>
+              <a 
+                href="tel:9263002626"
+                className="w-full text-center py-3 bg-[#115E59] text-white font-bold rounded-xl shadow-md uppercase tracking-wider text-xs hover:bg-[#0D4F4A]"
+              >
+                Call Office — 9263002626
+              </a>
+            </div>
+          </div>
+        )}
+      </header>
+
+      {activeView === 'bookings' ? (
+        <MyBookings onBackToHome={() => { setActiveView('main'); window.scrollTo({ top: 0, behavior: 'smooth' }); }} />
+      ) : (
+        <>
+          {/* 2. HERO SECTION */}
+          <section className="relative overflow-hidden pt-20 pb-24 md:pt-28 md:pb-32 bg-gradient-to-b from-[#FDFBF7]/90 via-[#F9F6F0]/90 to-[#FDFBF7]/90 z-10">
+        <div className="absolute top-1/4 right-0 w-96 h-96 rounded-full bg-[#115E59]/5 blur-[120px] pointer-events-none"></div>
+        <div className="absolute top-1/3 left-10 w-80 h-80 rounded-full bg-[#0F766E]/5 blur-[100px] pointer-events-none"></div>
+
+        <div className="max-w-7xl mx-auto px-6 relative z-10">
+          <div className="max-w-4xl">
+            {/* Tagline Badge */}
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-semibold tracking-wide mb-6">
+              <span className="flex h-2 w-2 relative">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-500 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+              </span>
+              Building the Future of Ranchi with Precision Engineering
+            </div>
+
+            {/* Main Header */}
+            <h1 className="text-3xl sm:text-5xl md:text-6xl lg:text-7xl font-black text-[#1E293B] tracking-tight leading-[1.08] mb-8">
+              Built on <span className="text-gradient-neon">Trust.</span> <br className="hidden sm:inline" />
+              Engineered for the <span className="text-gradient-neon">Future.</span>
+            </h1>
+
+            {/* About Us Copy */}
+            <p className="text-base sm:text-lg md:text-xl text-[#64748B] leading-relaxed max-w-3xl mb-12">
+              Pioneers in high-rise structural engineering and luxury residential landmarks. From Altius to Heritage, we redefine Ranchi’s skyline through JHARERA approved excellence.
+            </p>
+
+            {/* Dual Action Buttons */}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4 max-w-md md:max-w-none">
+              <a 
+                href="#projects" 
+                onClick={(e) => smoothScroll(e, 'projects')}
+                className="btn-neon-emerald py-4 px-8 rounded-xl flex items-center justify-center gap-2 text-sm uppercase tracking-wider cursor-pointer font-bold text-center"
+              >
+                <Building className="w-5 h-5 shrink-0" />
+                Explore Projects
+              </a>
+              <a 
+                href="https://wa.me/919263002626" 
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn-neon-cyan-outline py-4 px-8 rounded-xl flex items-center justify-center gap-2 text-sm uppercase tracking-wider cursor-pointer font-bold text-center"
+              >
+                <PhoneCall className="w-5 h-5 shrink-0" />
+                Direct Inquiry
+                <ArrowUpRight className="w-4.5 h-4.5 text-[#115E59]" />
+              </a>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* 3. ABOUT US SECTION */}
+      <section id="about" className="py-16 bg-white/90 border-b border-[#EAE5DC] relative z-10">
+        <div className="max-w-4xl mx-auto px-6 text-center space-y-4">
+          <h2 className="text-2xl md:text-3xl font-extrabold text-[#1E293B] tracking-tight uppercase">27+ Years of Engineering Legacy</h2>
+          <p className="text-sm md:text-base text-[#64748B] leading-relaxed">
+            Panchratna Constructions LLP is Ranchi's premier civil engineering firm, dedicated to creating sustainable urban ecosystems. Located in the heart of the city at Sarjana Chowk, we specialize in IGBC-certified green buildings and ultra-luxury high-rises. Our commitment to structural transparency and on-time delivery has made us the trusted choice for Ranchi’s most ambitious residential and commercial landmarks.
+          </p>
+        </div>
+      </section>
+
+      {/* 4. CREDIBILITY ROW */}
+      <section className="border-b border-[#EAE5DC] bg-[#F9F6F0]/90 py-12 relative z-10">
+        <div className="max-w-7xl mx-auto px-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8 md:gap-12">
+            
+            {/* Metric Column 1 */}
+            <div className="flex gap-4.5">
+              <div className="w-12 h-12 rounded-xl bg-white border border-[#EAE5DC] flex items-center justify-center text-[#115E59] shrink-0 shadow-sm">
+                <ShieldCheck className="w-6 h-6" />
+              </div>
+              <div className="space-y-1">
+                <h3 className="font-extrabold text-[#1E293B] text-lg tracking-tight uppercase">JHARERA &amp; IGBC Certified</h3>
+                <p className="text-xs text-[#64748B] leading-relaxed">
+                  Every project is 100% RERA compliant and engineered to Indian Green Building Council standards for maximum sustainability and legal safety.
+                </p>
+              </div>
+            </div>
+
+            {/* Metric Column 2 */}
+            <div className="flex gap-4.5">
+              <div className="w-12 h-12 rounded-xl bg-white border border-[#EAE5DC] flex items-center justify-center text-[#0F766E] shrink-0 shadow-sm">
+                <Building2 className="w-6 h-6" />
+              </div>
+              <div className="space-y-1">
+                <h3 className="font-extrabold text-[#1E293B] text-lg tracking-tight uppercase">30+ Delivered Landmarks</h3>
+                <p className="text-xs text-[#64748B] leading-relaxed">
+                  A proven track record of delivering iconic high-density residential and commercial complexes across prime locations in Ranchi.
+                </p>
+              </div>
+            </div>
+
+            {/* Metric Column 3 */}
+            <div className="flex gap-4.5">
+              <div className="w-12 h-12 rounded-xl bg-amber-50 border border-amber-200 flex items-center justify-center text-amber-700 shrink-0 shadow-sm">
+                <Star className="w-6 h-6" />
+              </div>
+              <div className="space-y-1">
+                <h3 className="font-extrabold text-[#1E293B] text-lg tracking-tight uppercase">4.9★ Structural Rating</h3>
+                <p className="text-xs text-[#64748B] leading-relaxed">
+                  Consistently recognized for superior construction quality, seismic-resistant designs, and premium luxury finishes in every unit.
+                </p>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </section>
+
+      {/* APPOINTMENT SECTION START (Safe to Remove) */}
+      <section id="projects" className="py-24 bg-[#FDFBF7]/90 relative z-10">
+        <div className="max-w-7xl mx-auto px-6">
+          <div className="text-center max-w-3xl mx-auto mb-16 space-y-4">
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-semibold uppercase tracking-wider">
+              Project Consultation &amp; Site Visits
+            </div>
+            <h2 className="text-3xl md:text-4xl font-extrabold text-[#1E293B] tracking-tight uppercase">
+              Schedule Your Site Visit
+            </h2>
+            <p className="text-sm md:text-base text-[#64748B] leading-relaxed">
+              Experience the quality of our construction firsthand. Book a slot for a guided tour of our active project sites or visit our Experience Center at Galleria.
+            </p>
+          </div>
+
+          <div className="relative">
+            <BookingCalendar />
+          </div>
+
+          <div className="mt-8 max-w-4xl mx-auto bg-gradient-to-r from-emerald-50 to-transparent p-6 rounded-2xl border border-emerald-100 flex flex-col md:flex-row items-center gap-6 shadow-sm">
+            <div className="w-14 h-14 bg-white rounded-xl shadow-md flex items-center justify-center text-[#115E59] shrink-0 border border-emerald-100">
+               <HardHat className="w-7 h-7" />
+            </div>
+            <div className="flex-1 text-center md:text-left">
+              <h4 className="text-[#1A2421] font-extrabold text-lg mb-1 uppercase tracking-tight">Technical Consultation Act    try {
       if (activeView === 'bookings') {
         document.title = "My Confirmed Spots & Slips | Kanchan Homoeo Hall Ranchi";
         const descMeta = document.querySelector('meta[name="description"]');
