@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { Calendar, Clock, User, Phone, CheckCircle2, AlertCircle, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
+import { Calendar, Clock, User, Phone, CheckCircle2, AlertCircle, ChevronLeft, ChevronRight, Loader2, Building2, HardHat } from 'lucide-react';
 import { db, isFirebaseConfigured, mockDb } from '../firebaseClient';
 import { collection, query, where, getDocs, addDoc } from 'firebase/firestore';
 
@@ -17,16 +17,13 @@ function getKolkataTime() {
     });
     const parts = formatter.formatToParts(new Date());
     const partObj = {};
-    parts.forEach(p => {
-      partObj[p.type] = p.value;
-    });
+    parts.forEach(p => { partObj[p.type] = p.value; });
     return {
       dateStr: `${partObj.year}-${partObj.month}-${partObj.day}`,
       hour: parseInt(partObj.hour, 10),
       minute: parseInt(partObj.minute, 10)
     };
   } catch (e) {
-    console.error('Kolkata time format error:', e);
     const d = new Date();
     return {
       dateStr: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`,
@@ -34,6 +31,263 @@ function getKolkataTime() {
       minute: d.getMinutes()
     };
   }
+}
+
+function getSlotMinutes(slotStr) {
+  const match = slotStr.match(/(\d{2}):(\d{2})\s*(AM|PM)/i);
+  if (!match) return 0;
+  let hours = parseInt(match[1], 10);
+  const minutes = parseInt(match[2], 10);
+  const ampm = match[3];
+  if (ampm.toUpperCase() === 'PM' && hours !== 12) hours += 12;
+  else if (ampm.toUpperCase() === 'AM' && hours === 12) hours = 0;
+  return hours * 60 + minutes;
+}
+
+export default function BookingCalendar() {
+  const [currentDate, setCurrentDate] = useState(() => {
+    const kolkata = getKolkataTime();
+    const [y, m] = kolkata.dateStr.split('-').map(Number);
+    return new Date(y, m - 1, 1);
+  });
+  const [selectedDate, setSelectedDate] = useState(() => {
+    const kolkata = getKolkataTime();
+    const [y, m, d] = kolkata.dateStr.split('-').map(Number);
+    const kolkataDate = new Date(y, m - 1, d);
+    if (kolkataDate.getDay() === 0) {
+      const monday = new Date(kolkataDate);
+      monday.setDate(kolkataDate.getDate() + 1);
+      return monday;
+    }
+    return kolkataDate;
+  });
+  const [selectedTimeSlot, setSelectedTimeSlot] = useState(null);
+  const [blockedSlots, setBlockedSlots] = useState([]);
+  const [loadingSlots, setLoadingSlots] = useState(false);
+
+  // Form states
+  const [name, setName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [success, setSuccess] = useState(false);
+  const [error, setError] = useState('');
+  const [bookingDetails, setBookingDetails] = useState(null);
+
+  // Site Visit Slots: 10:30 AM to 5:00 PM (Mon–Sat)
+  const timeSlots = useMemo(() => [
+    '10:30 AM', '11:30 AM', '12:30 PM', '02:30 PM',
+    '03:30 PM', '04:30 PM', '05:30 PM'
+  ], []);
+
+  const formatDateString = (date) => {
+    const d = new Date(date);
+    return [d.getFullYear(), ('' + (d.getMonth() + 1)).padStart(2, '0'), ('' + d.getDate()).padStart(2, '0')].join('-');
+  };
+
+  const selectedDateStr = useMemo(() => formatDateString(selectedDate), [selectedDate]);
+
+  useEffect(() => {
+    let active = true;
+    async function fetchBookings() {
+      setLoadingSlots(true);
+      try {
+        if (isFirebaseConfigured) {
+          const appointmentsRef = collection(db, 'panchratna_site_visits');
+          const q = query(appointmentsRef, where('appointment_date', '==', selectedDateStr));
+          const querySnapshot = await getDocs(q);
+          const booked = [];
+          querySnapshot.forEach((doc) => {
+            const data = doc.data();
+            if (data.status === 'Pending' || data.status === 'Confirmed') booked.push(data.time_slot);
+          });
+          if (active) setBlockedSlots(booked);
+        } else {
+          const mockBookings = await mockDb.getAppointments(selectedDateStr);
+          const booked = mockBookings.filter(apt => apt.status !== 'CANCELLED').map(apt => apt.time_slot);
+          if (active) setBlockedSlots(booked);
+        }
+      } catch (err) { console.error('Error fetching slots:', err); }
+      finally { if (active) setLoadingSlots(false); }
+    }
+    fetchBookings();
+    return () => { active = false; };
+  }, [selectedDateStr]);
+
+  const year = currentDate.getFullYear();
+  const month = currentDate.getMonth();
+  const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const firstDayIndex = new Date(year, month, 1).getDay();
+
+  const prevMonth = () => {
+    const kolkata = getKolkataTime();
+    const [kYear, kMonth] = kolkata.dateStr.split('-').map(Number);
+    if (year > kYear || (year === kYear && month > (kMonth - 1))) setCurrentDate(new Date(year, month - 1, 1));
+  };
+
+  const nextMonth = () => setCurrentDate(new Date(year, month + 1, 1));
+
+  const selectDay = useCallback((day) => {
+    const date = new Date(year, month, day);
+    const dateStr = formatDateString(date);
+    const kolkata = getKolkataTime();
+    if (dateStr >= kolkata.dateStr && date.getDay() !== 0) {
+      setSelectedDate(date);
+      setSelectedTimeSlot(null);
+      setError('');
+    }
+  }, [year, month]);
+
+  const handleBookingSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+    if (!name.trim()) { setError('Full name is required.'); return; }
+    if (!phone.trim()) { setError('Contact phone number is required.'); return; }
+    if (!selectedTimeSlot) { setError('Please select a site visit slot.'); return; }
+
+    setSubmitting(true);
+    const payload = {
+      client_name: name.trim(),
+      client_phone: phone.trim(),
+      appointment_date: selectedDateStr,
+      time_slot: selectedTimeSlot,
+      status: 'Pending'
+    };
+
+    try {
+      if (isFirebaseConfigured) {
+        await addDoc(collection(db, 'panchratna_site_visits'), { ...payload, created_at: new Date().toISOString() });
+      } else {
+        await mockDb.addAppointment(payload);
+      }
+
+      setBookingDetails(payload);
+      setSuccess(true);
+      setName(''); setPhone(''); setSelectedTimeSlot(null);
+      setBlockedSlots(prev => [...prev, selectedTimeSlot]);
+    } catch (err) { setError('Failed to book site visit. Please try again.'); }
+    finally { setSubmitting(false); }
+  };
+
+  const daysGrid = useMemo(() => {
+    const cells = [];
+    for (let i = 0; i < firstDayIndex; i++) cells.push(<div key={`empty-${i}`} className="w-full aspect-square max-w-[40px]"></div>);
+    const kolkata = getKolkataTime();
+
+    for (let d = 1; d <= daysInMonth; d++) {
+      const thisDate = new Date(year, month, d);
+      const thisDateStr = formatDateString(thisDate);
+      const isPast = thisDateStr < kolkata.dateStr;
+      const isSunday = thisDate.getDay() === 0;
+      const isBlocked = isPast || isSunday;
+      const isSelected = selectedDate.getDate() === d && selectedDate.getMonth() === month && selectedDate.getFullYear() === year;
+      
+      let dayBtnStyles = "w-full aspect-square max-w-[40px] rounded-lg flex items-center justify-center font-bold text-xs transition-all duration-200 ";
+      if (isBlocked) dayBtnStyles += "text-slate-300 cursor-not-allowed bg-slate-50 opacity-40";
+      else if (isSelected) dayBtnStyles += "bg-[#115E59] text-white shadow-md ring-2 ring-emerald-200";
+      else dayBtnStyles += "text-slate-800 hover:bg-emerald-50 hover:text-[#115E59] cursor-pointer border border-slate-100";
+
+      cells.push(<button key={`day-${d}`} type="button" disabled={isBlocked} onClick={() => selectDay(d)} className={dayBtnStyles}>{d}</button>);
+    }
+    return cells;
+  }, [year, month, selectedDate, firstDayIndex, daysInMonth, selectDay]);
+
+  return (
+    <div className="glassmorphism-light rounded-2xl p-4 sm:p-6 md:p-8 max-w-4xl mx-auto shadow-2xl relative overflow-hidden">
+      <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-neon"></div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 mt-2">
+        <div className="lg:col-span-7 flex flex-col justify-between">
+          <div>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
+              <div>
+                <h3 className="font-extrabold text-sm text-slate-800 flex items-center gap-2 uppercase tracking-widest">
+                  <Calendar className="w-5 h-5 text-[#115E59]" />
+                  Site Visit Date
+                </h3>
+              </div>
+              <div className="flex items-center gap-1.5 self-end sm:self-auto">
+                <button onClick={prevMonth} disabled={year === new Date().getFullYear() && month === new Date().getMonth()} className="p-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-100 disabled:opacity-30"><ChevronLeft className="w-4 h-4" /></button>
+                <span className="font-bold text-xs text-slate-800 min-w-[100px] text-center uppercase tracking-widest">{monthNames[month]} {year}</span>
+                <button onClick={nextMonth} className="p-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-100"><ChevronRight className="w-4 h-4" /></button>
+              </div>
+            </div>
+
+            <div className="border border-slate-100 rounded-xl p-3 bg-white">
+              <div className="grid grid-cols-7 gap-1 text-center font-bold text-[10px] text-slate-400 mb-2 py-1 uppercase tracking-widest">
+                <div className="text-rose-400">Su</div><div>Mo</div><div>Tu</div><div>We</div><div>Th</div><div>Fr</div><div>Sa</div>
+              </div>
+              <div className="grid grid-cols-7 gap-1 md:gap-1.5 justify-items-center w-full">{daysGrid}</div>
+            </div>
+          </div>
+          <div className="mt-4 p-3 bg-emerald-50/50 rounded-xl border border-emerald-100 text-[10px] text-emerald-800 font-bold uppercase tracking-widest">
+            Selected: {selectedDate.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}
+          </div>
+        </div>
+
+        <div className="lg:col-span-5 flex flex-col justify-between border-t lg:border-t-0 lg:border-l border-slate-200/70 pt-6 lg:pt-0 lg:pl-8 min-h-[380px]">
+          {success && bookingDetails ? (
+            <div className="flex flex-col h-full justify-between animate-fade-in space-y-5">
+              <div className="text-center space-y-3">
+                <div className="w-14 h-14 rounded-full bg-emerald-50 border border-emerald-200 flex items-center justify-center mx-auto text-emerald-600 shadow-sm mt-2"><CheckCircle2 className="w-8 h-8" /></div>
+                <h3 className="font-black text-xl text-slate-800 tracking-tight uppercase">Visit Scheduled!</h3>
+              </div>
+
+              <div className="bg-[#FDFBF7] border border-[#EAE5DC] rounded-xl p-4 space-y-3 shadow-sm relative overflow-hidden">
+                <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-neon"></div>
+                <h4 className="text-[10px] font-bold text-[#115E59] uppercase tracking-widest border-b border-[#EAE5DC] pb-1.5 flex items-center gap-1.5"><Clock className="w-3.5 h-3.5" /> Site Visit Pass</h4>
+                <div className="space-y-2 text-[10px] text-slate-700 font-bold uppercase tracking-wider">
+                  <div className="flex justify-between"><span>Client:</span><span className="text-slate-900">{bookingDetails.client_name}</span></div>
+                  <div className="flex justify-between"><span>Date:</span><span className="text-slate-900">{new Date(bookingDetails.appointment_date).toLocaleDateString()}</span></div>
+                  <div className="flex justify-between"><span>Slot:</span><span className="text-[#115E59]">{bookingDetails.time_slot}</span></div>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <a href="https://wa.me/919263002626" target="_blank" className="w-full py-3 bg-[#25D366] text-white rounded-xl font-black text-xs uppercase tracking-widest shadow-md flex items-center justify-center gap-2">Confirm on WhatsApp</a>
+                <button onClick={() => setSuccess(false)} className="w-full text-center py-2 text-[#115E59] font-black text-[10px] uppercase tracking-widest">Schedule Another</button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div>
+                <h3 className="font-extrabold text-sm text-slate-800 flex items-center gap-2 mb-1 uppercase tracking-widest"><Clock className="w-5 h-5 text-cyan-600" /> Visit Slots</h3>
+                <p className="text-[10px] text-slate-500 mb-4 font-bold uppercase">Engineering Walkthroughs available 10:30 AM – 5:30 PM</p>
+                <div className="grid grid-cols-2 gap-2">
+                  {timeSlots.map((slot) => {
+                    const isBooked = blockedSlots.includes(slot);
+                    let slotStyles = "py-2 px-3 text-center rounded-lg text-[10px] font-black uppercase tracking-widest border transition-all duration-200 ";
+                    if (isBooked) slotStyles += "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed line-through";
+                    else if (selectedTimeSlot === slot) slotStyles += "bg-cyan-600 text-white border-cyan-700 shadow-md ring-2 ring-cyan-100";
+                    else slotStyles += "bg-white text-slate-700 border-slate-200 hover:border-cyan-400 cursor-pointer";
+                    return <button key={slot} disabled={isBooked} onClick={() => setSelectedTimeSlot(slot)} className={slotStyles}>{slot}</button>;
+                  })}
+                </div>
+              </div>
+
+              <form onSubmit={handleBookingSubmit} className="space-y-4 mt-6">
+                <div>
+                  <label className="block text-[10px] font-black text-slate-600 uppercase tracking-widest mb-1">Client Name</label>
+                  <div className="relative"><span className="absolute inset-y-0 left-0 pl-3 flex items-center text-slate-400"><User className="w-4 h-4" /></span>
+                  <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Rahul Agarwal" className="block w-full pl-9 pr-3 py-2 text-xs bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#115E59]" /></div>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black text-slate-600 uppercase tracking-widest mb-1">Phone Number</label>
+                  <div className="relative"><span className="absolute inset-y-0 left-0 pl-3 flex items-center text-slate-400"><Phone className="w-4 h-4" /></span>
+                  <input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="e.g. 92630 02626" className="block w-full pl-9 pr-3 py-2 text-xs bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#115E59]" /></div>
+                </div>
+                {error && <div className="p-2 bg-rose-50 text-rose-700 text-[10px] font-bold rounded-xl flex items-center gap-2"><span>{error}</span></div>}
+                <button type="submit" disabled={submitting} className="w-full py-3 bg-[#115E59] text-white rounded-xl font-black text-xs uppercase tracking-widest shadow-md disabled:opacity-50">
+                  {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Confirm Site Visit'}
+                </button>
+              </form>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
 }
 
 // Helper to convert slot string (e.g. "03:15 PM") to minutes since midnight
