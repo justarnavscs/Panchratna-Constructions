@@ -168,39 +168,25 @@ export default function BookingCalendar() {
         console.error('Google Sheets sync failed:', sheetErr);
       }
 
-      // Trigger 100% Free Automated WhatsApp Web Bridge
-      const bridgeUrl = import.meta.env.VITE_WHATSAPP_BRIDGE_URL;
-      const bridgeApiKey = import.meta.env.VITE_WHATSAPP_BRIDGE_API_KEY;
-
-      if (bridgeUrl && bridgeApiKey) {
-        try {
-          const dateObj = new Date(payload.appointment_date);
-          const formattedDate = dateObj.toLocaleDateString(undefined, {
-            weekday: 'long',
-            year: 'numeric',
-            month: 'long',
-            day: 'numeric'
-          });
-
-          const waMsg = `Hello ${payload.patient_name},\n\nYour appointment request at *Kanchan Homoeo Hall* has been successfully received!\n\n📅 *Date:* ${formattedDate}\n🕒 *Time:* ${payload.time_slot}\n🟢 *Status:* Confirmed (Automatic Alert)\n\n📍 *Address:* Near Mahabir Chowk, PyadaToli, Upper Bazar, Ranchi.\n\nThank you for choosing us for holistic, natural remedies! We look forward to seeing you.`;
-
-          fetch(`${bridgeUrl}/send-message`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              phone: payload.patient_phone,
-              message: waMsg,
-              apiKey: bridgeApiKey
-            })
-          }).then(res => {
-            if (!res.ok) console.warn('WhatsApp bridge responded with error status:', res.status);
-            else console.log('✅ Automated WhatsApp bridge message sent successfully.');
-          }).catch(err => {
-            console.error('⚠️ WhatsApp bridge network query failed:', err);
-          });
-        } catch (bridgeErr) {
-          console.error('⚠️ Automated WhatsApp bridge delivery failed:', bridgeErr);
-        }
+      // Send automated WhatsApp confirmation via Meta Cloud API (server-side, secure)
+      try {
+        fetch('/api/sendWhatsApp', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            patient_name: payload.patient_name,
+            patient_phone: payload.patient_phone,
+            appointment_date: payload.appointment_date,
+            time_slot: payload.time_slot
+          })
+        }).then(res => {
+          if (!res.ok) console.warn('⚠️ WhatsApp API responded with error:', res.status);
+          else console.log('✅ WhatsApp confirmation sent via Meta Cloud API.');
+        }).catch(err => {
+          console.error('⚠️ WhatsApp API call failed:', err);
+        });
+      } catch (waErr) {
+        console.error('⚠️ WhatsApp notification error:', waErr);
       }
 
       // Feature A: Append new appointment payload to localStorage cache user_local_bookings

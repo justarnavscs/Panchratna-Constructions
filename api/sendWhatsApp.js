@@ -1,0 +1,107 @@
+/**
+ * Vercel Serverless Function: /api/sendWhatsApp
+ * 
+ * Sends an automated WhatsApp message via Meta's official Cloud API.
+ * Runs server-side so the access token is NEVER exposed to the browser.
+ * 
+ * Required environment variables (set in Vercel dashboard):
+ *   WHATSAPP_PHONE_NUMBER_ID   — from Meta Developer Console
+ *   WHATSAPP_ACCESS_TOKEN      — permanent token from Meta
+ *   WHATSAPP_TEMPLATE_NAME     — template name (default: "appointment_confirmation")
+ */
+
+export default async function handler(req, res) {
+  // Only allow POST
+  if (req.method !== 'POST') {
+    return res.status(405).json({ message: 'Method Not Allowed' });
+  }
+
+  try {
+    const { patient_name, patient_phone, appointment_date, time_slot } = req.body;
+
+    if (!patient_name || !patient_phone || !appointment_date || !time_slot) {
+      return res.status(400).json({ message: 'Missing required fields.' });
+    }
+
+    // Read credentials securely from server environment
+    const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+    const accessToken  = process.env.WHATSAPP_ACCESS_TOKEN;
+
+    // If credentials not yet configured, return a mock success so the
+    // booking flow itself is never broken during development/testing.
+    if (!phoneNumberId || !accessToken) {
+      console.warn('⚠️ Meta WhatsApp credentials not configured — mock success returned.');
+      return res.status(200).json({
+        status: 'mock_success',
+        message: 'WhatsApp credentials not set yet. Message was NOT actually sent.',
+        recipient: patient_phone
+      });
+    }
+
+    // Normalize phone number to E.164 format (e.g. 9431360455 → 919431360455)
+    let cleanPhone = patient_phone.replace(/[^0-9]/g, '');
+    if (cleanPhone.length === 10) {
+      cleanPhone = `91${cleanPhone}`;          // add India country code
+    } else if (cleanPhone.startsWith('0')) {
+      cleanPhone = `91${cleanPhone.slice(1)}`; // replace leading 0 with 91
+    }
+
+    // Format date nicely for the message
+    const dateObj = new Date(appointment_date);
+    const formattedDate = dateObj.toLocaleDateString('en-IN', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      timeZone: 'Asia/Kolkata'
+    });
+
+    // Build the WhatsApp message text
+    const messageText =
+      `Hello ${patient_name}! 👋\n\n` +
+      `Your appointment at *Kanchan Homoeo Hall* has been successfully booked! ✅\n\n` +
+      `📅 *Date:* ${formattedDate}\n` +
+      `🕒 *Time:* ${time_slot}\n\n` +
+      `📍 *Address:* Near Mahabir Chowk, PyadaToli, Upper Bazar, Ranchi.\n\n` +
+      `Thank you for choosing us for holistic, natural care. We look forward to seeing you! 🌿\n\n` +
+      `— Kanchan Homoeo Hall`;
+
+    // Call Meta WhatsApp Cloud API
+    const apiUrl = `https://graph.facebook.com/v19.0/${phoneNumberId}/messages`;
+
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        to: cleanPhone,
+        type: 'text',
+        text: { body: messageText }
+      })
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      console.error('❌ Meta API error:', data);
+      return res.status(response.status).json({
+        message: 'Failed to send WhatsApp message.',
+        error: data?.error?.message || 'Unknown Meta API error'
+      });
+    }
+
+    console.log(`✅ WhatsApp message sent to ${cleanPhone}. Message ID: ${data?.messages?.[0]?.id}`);
+    return res.status(200).json({
+      status: 'success',
+      messageId: data?.messages?.[0]?.id,
+      recipient: cleanPhone
+    });
+
+  } catch (error) {
+    console.error('❌ sendWhatsApp handler error:', error);
+    return res.status(500).json({ message: 'Internal Server Error', error: error.message });
+  }
+}
