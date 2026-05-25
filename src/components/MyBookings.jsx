@@ -111,26 +111,24 @@ export default function MyBookings({ onBackToHome }) {
         <div className="flex items-center justify-between border-b border-[#EAE5DC]/60 pb-3">
           <div className={`flex items-center gap-2 ${isCancelled ? 'text-slate-400' : 'text-emerald-700'}`}>
             <Calendar className="w-4 h-4" />
-            <span className="font-bold text-xs uppercase tracking-wider">Appointment Pass</span>
+            <span className={`font-bold text-xs uppercase tracking-wider ${isCancelled ? 'line-through' : ''}`}>Appointment Pass</span>
           </div>
-          {isCancelled ? (
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-wider border bg-slate-100 border-slate-300 text-slate-500">
-              ✕ Cancelled
-            </span>
-          ) : (
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-wider border bg-emerald-50 border-emerald-200 text-emerald-700">
-              Booked
-            </span>
-          )}
+          <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-wider border ${
+            isCancelled
+              ? 'bg-slate-100 border-slate-200 text-slate-400 line-through'
+              : 'bg-emerald-50 border-emerald-200 text-emerald-700'
+          }`}>
+            Booked
+          </span>
         </div>
 
-        <div className={`grid grid-cols-1 md:grid-cols-2 gap-4 text-xs ${isCancelled ? 'opacity-50' : ''}`}>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
           <div className="space-y-3">
             <div className="flex items-center gap-2.5 text-slate-600">
               <User className="w-4 h-4 text-slate-400 shrink-0" />
               <div>
                 <span className="block text-[9px] uppercase tracking-wider font-bold text-slate-400">Patient Name</span>
-                <span className="font-bold text-slate-900">{booking.patient_name}</span>
+                <span className={`font-bold text-slate-900 ${isCancelled ? 'line-through text-slate-400' : ''}`}>{booking.patient_name}</span>
               </div>
             </div>
 
@@ -138,7 +136,7 @@ export default function MyBookings({ onBackToHome }) {
               <Phone className="w-4 h-4 text-slate-400 shrink-0" />
               <div>
                 <span className="block text-[9px] uppercase tracking-wider font-bold text-slate-400">Registered Phone</span>
-                <span className="font-semibold text-slate-800">{booking.patient_phone}</span>
+                <span className={`font-semibold text-slate-800 ${isCancelled ? 'line-through text-slate-400' : ''}`}>{booking.patient_phone}</span>
               </div>
             </div>
           </div>
@@ -148,7 +146,7 @@ export default function MyBookings({ onBackToHome }) {
               <Calendar className="w-4 h-4 text-slate-400 shrink-0" />
               <div>
                 <span className="block text-[9px] uppercase tracking-wider font-bold text-slate-400">Consultation Date</span>
-                <span className="font-bold text-slate-900">
+                <span className={`font-bold text-slate-900 ${isCancelled ? 'line-through text-slate-400' : ''}`}>
                   {new Date(booking.appointment_date).toLocaleDateString(undefined, {
                     weekday: 'long',
                     year: 'numeric',
@@ -163,7 +161,11 @@ export default function MyBookings({ onBackToHome }) {
               <Clock className="w-4 h-4 text-slate-400 shrink-0" />
               <div>
                 <span className="block text-[9px] uppercase tracking-wider font-bold text-slate-400">Reserved Slot</span>
-                <span className="font-extrabold text-[#0F766E] bg-teal-50 px-2 py-0.5 rounded border border-teal-100">{booking.time_slot}</span>
+                <span className={`font-extrabold px-2 py-0.5 rounded border ${
+                  isCancelled
+                    ? 'line-through text-slate-400 bg-slate-50 border-slate-200'
+                    : 'text-[#0F766E] bg-teal-50 border-teal-100'
+                }`}>{booking.time_slot}</span>
               </div>
             </div>
           </div>
