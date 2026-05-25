@@ -74,26 +74,22 @@ export default function BulkForm() {
         await mockDb.addBulkOrder(payload);
       }
 
-      // Sync with Google Sheets via Vercel Serverless Function
-      try {
-        await fetch('/api/updateSheets', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ 
-            type: 'b2b_query', 
-            data: {
-              name: payload.client_name,
-              companyName: payload.company_name,
-              email: payload.email,
-              phone: payload.phone,
-              quantity: payload.estimated_quantity,
-              requirements: payload.requirements_text
-            }
-          })
-        });
-      } catch (sheetErr) {
-        console.error('Google Sheets sync failed:', sheetErr);
-      }
+      // Sync with Google Sheets — fire-and-forget (non-blocking)
+      fetch('/api/updateSheets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'b2b_query',
+          data: {
+            name: payload.client_name,
+            companyName: payload.company_name,
+            email: payload.email,
+            phone: payload.phone,
+            quantity: payload.estimated_quantity,
+            requirements: payload.requirements_text
+          }
+        })
+      }).catch((sheetErr) => console.error('Google Sheets sync failed:', sheetErr));
 
       setSuccess(true);
       setName('');
