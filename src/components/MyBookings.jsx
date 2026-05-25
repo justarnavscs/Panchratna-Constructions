@@ -1,64 +1,39 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Search, Calendar, Clock, User, Phone, CheckCircle2, AlertCircle, Loader2, ArrowLeft } from 'lucide-react';
 import { db, isFirebaseConfigured, mockDb } from '../firebaseClient';
-import { collection, query, where, getDocs, onSnapshot, orderBy } from 'firebase/firestore';
+import { collection, query, where, getDocs } from 'firebase/firestore';
 
 export default function MyBookings({ onBackToHome }) {
   const [searchPhone, setSearchPhone] = useState('');
-  const [searching, setSearching] = useState(false);;
-  const [allBookings, setAllBookings] = useState([]);
-  const [loadingAll, setLoadingAll] = useState(true);
-
+  const [searching, setSearching] = useState(false);
+  const [localBookings] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('user_local_bookings') || '[]');
+    } catch (e) {
+      console.error('Failed to load local device bookings:', e);
+      return [];
+    }
+  });
   const [searchResults, setSearchResults] = useState(null);
   const [searchError, setSearchError] = useState('');
-
-  // Real-time listener for ALL bookings (shared across every device)
-  useEffect(() => {
-    if (isFirebaseConfigured) {
-      setLoadingAll(true);
-      const appointmentsRef = collection(db, 'clinic_appointments');
-      const q = query(appointmentsRef, orderBy('created_at', 'desc'));
-      const unsubscribe = onSnapshot(q, (snapshot) => {
-        const all = [];
-        snapshot.forEach((doc) => all.push({ id: doc.id, ...doc.data() }));
-        setAllBookings(all);
-        setLoadingAll(false);
-      }, (err) => {
-        console.error('Failed to listen to all bookings:', err);
-        setLoadingAll(false);
-      });
-      return () => unsubscribe();
-    } else {
-      // Fallback: mock DB
-      let active = true;
-      setLoadingAll(true);
-      mockDb.getAppointments().then((all) => {
-        if (active) {
-          setAllBookings(all);
-          setLoadingAll(false);
-        }
-      }).catch((e) => {
-        console.error('Failed to load mock bookings:', e);
-        if (active) setLoadingAll(false);
-      });
-      return () => { active = false; };
-    }
-  }, []);
 
   // Feature B: Search database by phone number
   const handlePhoneSearch = async (e) => {
     e.preventDefault();
     setSearchError('');
     setSearchResults(null);
+
     const formattedSearch = searchPhone.trim();
     if (!formattedSearch) {
       setSearchError('Please enter a phone number to search.');
       return;
     }
+
     setSearching(true);
 
     try {
       if (isFirebaseConfigured) {
+        // Query Firestore collection clinic_appointments by patient_phone
         const appointmentsRef = collection(db, 'clinic_appointments');
         const q = query(appointmentsRef, where('patient_phone', '==', formattedSearch));
         const querySnapshot = await getDocs(q);
@@ -68,9 +43,11 @@ export default function MyBookings({ onBackToHome }) {
           results.push({ id: doc.id, ...doc.data() });
         });
 
+        // Sort by date descending
         results.sort((a, b) => new Date(b.appointment_date) - new Date(a.appointment_date));
         setSearchResults(results);
       } else {
+        // Query Local Mock Database by phone number
         const results = await mockDb.getAppointmentsByPhone(formattedSearch);
         results.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
         setSearchResults(results);
@@ -185,7 +162,7 @@ export default function MyBookings({ onBackToHome }) {
         </p>
       </div>
 
-      {/* Main Grid: All Bookings (Left) & Phone Search (Right) */}
+      {/* Main Grid: Device Caching (Left) & Search (Right) */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
         
         {/* Left Column: Phone Lookup Portal (Feature B) */}
@@ -270,39 +247,31 @@ export default function MyBookings({ onBackToHome }) {
           )}
         </div>
 
-        {/* Right Column: All Bookings from Firestore (live, shared) */}
+        {/* Right Column: Local Device Caching Registry (Feature A) */}
         <div className="lg:col-span-7 space-y-5">
           <div className="flex items-center justify-between border-b border-[#EAE5DC] pb-3">
             <h3 className="font-extrabold text-slate-800 text-sm uppercase tracking-widest flex items-center gap-2">
               <CheckCircle2 className="w-4.5 h-4.5 text-emerald-600 animate-pulse" />
-              All Booked Appointments
+              Booked from This Browser
             </h3>
-            <span className="text-3xs font-extrabold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping inline-block"></span>
-              Live · All Devices
-            </span>
+            <span className="text-3xs font-extrabold text-slate-400 uppercase tracking-wider">Local Device Storage</span>
           </div>
 
-          {loadingAll ? (
-            <div className="bg-white border border-[#EAE5DC] rounded-2xl p-10 flex flex-col items-center justify-center gap-3 text-slate-500">
-              <Loader2 className="w-8 h-8 animate-spin text-emerald-500" />
-              <span className="text-xs font-medium">Loading appointments...</span>
-            </div>
-          ) : allBookings.length === 0 ? (
+          {localBookings.length === 0 ? (
             <div className="bg-white border border-[#EAE5DC] rounded-2xl p-10 text-center space-y-3">
               <div className="w-12 h-12 rounded-full bg-slate-50 flex items-center justify-center text-slate-400 mx-auto border border-slate-100">
                 🔍
               </div>
               <div className="space-y-1">
-                <h4 className="font-bold text-sm text-slate-700">No Appointments Yet</h4>
+                <h4 className="font-bold text-sm text-slate-700">No Local Booking Slips</h4>
                 <p className="text-xs text-slate-400 leading-relaxed max-w-sm mx-auto">
-                  No appointments have been booked yet. Once a booking is made from any device, it will appear here instantly.
+                  You haven't requested any appointments from this browser session yet. If you booked from another device, use the **Phone Lookup** tool.
                 </p>
               </div>
             </div>
           ) : (
-            <div className="space-y-5 max-h-[600px] overflow-y-auto pr-1">
-              {allBookings.map(renderBookingCard)}
+            <div className="space-y-5">
+              {localBookings.map(renderBookingCard)}
             </div>
           )}
         </div>
